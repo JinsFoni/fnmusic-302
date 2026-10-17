@@ -437,13 +437,36 @@ function proxy(req, res, { patch = false } = {}) {
 }
 
 /* ------------------------------------------------------------ stream route */
-/* 302 只发给媒体元素；fetch()/XHR 必须由服务端拉流补 CORS 头 */
+/* 没有 Sec-Fetch-* 时，闭区间 Range 且不超过这个大小才算 fetch 探针 */
+const PROBE_MAX = 16 * 1024 * 1024;
+
+/* 把 Range 解析成 { open, length }，解析不了返回 null */
+function rangeSpan(range) {
+  const m = /^bytes=(\d+)-(\d*)$/.exec(String(range || '').trim());
+  if (!m) return null;
+  const start = Number(m[1]);
+  if (!m[2]) return { open: true, length: Infinity, start };
+  return { open: false, length: Number(m[2]) - start + 1, start };
+}
+
+/*
+ * 只有媒体元素才给 302；fetch()/XHR 必须由服务端拉流补 CORS 头，否则被浏览器拦。
+ * 判断顺序：
+ *   1. Sec-Fetch-Dest（最准）：audio/video → 媒体；empty/document/iframe → 不是
+ *   2. Sec-Fetch-Mode：cors / same-origin（同源 fetch）→ 不是；no-cors → 媒体
+ *   3. 两个头都没有（http:// 内网 IP 属于非安全上下文，Chrome 不发 Sec-Fetch-*）：
+ *      媒体元素用开放式 Range（bytes=N-），fetch 探针用闭区间且通常只有 1MB，
+ *      据此区分；解析不出 Range 时按媒体处理（保直链、省流量）
+ */
 function isMediaElementRequest(req) {
   const dest = String(req.headers['sec-fetch-dest'] || '').toLowerCase();
   const mode = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
   if (dest === 'audio' || dest === 'video') return true;
   if (dest === 'empty' || dest === 'document' || dest === 'iframe') return false;
-  return mode !== 'cors' && mode !== 'same-origin';
+  if (mode) return mode !== 'cors' && mode !== 'same-origin';
+  const span = rangeSpan(req.headers.range);
+  if (span && !span.open && span.length <= PROBE_MAX) return false;
+  return true;
 }
 
 async function handleStream(req, res, u) {
@@ -484,6 +507,7 @@ async function handleStream(req, res, u) {
   // 注意同源 fetch 的 sec-fetch-mode 是 same-origin 而不是 cors），
   // 没有该头的老客户端再退回 sec-fetch-mode。
   const wantsCors = !isMediaElementRequest(req);
+  if (process.env.DEBUG_STREAM) console.log('[dbg]', JSON.stringify(req.headers));
 
   // 安全阀：这条链的剩余寿命撑不完本曲（换链刚失败时会走到这里），
   // 那就改走拉流，让服务端在播放途中自己续链，避免中途 403。

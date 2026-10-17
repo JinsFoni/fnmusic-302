@@ -53,6 +53,21 @@
 | 拉流途中 115 返回 403/401（过期） | 自动换链，**用同一个 `Range` 重放**，浏览器完全无感 |
 | 同一首歌并发多个 Range / prefetch | 共用一次换链（in-flight 去重），不会打爆 OpenList |
 
+### 302 还是拉流：怎么判断
+
+同一个 `track/stream` 地址，两种客户端要不同对待——`<audio>` 可以直接吃 302，`fetch()` 不行（115 没有 CORS 头，跟着 302 跳过去会被浏览器拦掉）。
+
+| 请求 | 判据 | 行为 |
+|---|---|---|
+| `<audio>` / `<video>` | `Sec-Fetch-Dest: audio\|video` | 302 直链 |
+| `fetch()` / XHR | `Sec-Fetch-Dest: empty` | 服务端拉流 + 补 CORS |
+| 同源 `fetch()` | `Sec-Fetch-Mode: same-origin` | 服务端拉流 |
+| 导航 / iframe | `Sec-Fetch-Dest: document\|iframe` | 服务端拉流 |
+
+注意：`http://内网IP` 属于**非安全上下文**，Chrome 这类浏览器压根不发 `Sec-Fetch-*` 头（用 `127.0.0.1` 才会发）。这种情况下按 `Range` 形状判断：媒体元素用开放式 `bytes=N-` → 302；播放器的 fetch 探针用闭区间且通常只有 1MB → 拉流。所以每首歌大约会有 1MB 左右经过反代，其余音频流量仍然是浏览器直连 115。
+
+打开 `DEBUG_STREAM=1` 可以把每个请求的 `Sec-Fetch-*` / `Range` 打到日志里。
+
 要点：
 
 - **零后台刷新**：不播放就不换链，不浪费 115 的取链配额，也不会因为定时任务让链接在播放中途“被换掉”。

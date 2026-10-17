@@ -261,6 +261,20 @@ try {
       'sec-fetch-dest': 'audio',
     });
     check('媒体元素仍是 302', mediaRes.status === 302, String(mediaRes.status));
+
+    // http:// 内网 IP 是非安全上下文，Chrome 根本不发 Sec-Fetch-*，
+    // 只能靠 Range 形状区分：闭区间=fetch 探针（拉流），开放式=媒体元素（302）
+    const noSfProbe = await rawGet(`${BASE}/music/api/v1/track/stream?guid=${guid}`, {
+      cookie: `music-token=${token}`,
+      range: 'bytes=0-1048575',
+    });
+    check('无 Sec-Fetch 的 fetch 探针走拉流', noSfProbe.status === 206, String(noSfProbe.status));
+
+    const noSfMedia = await rawGet(`${BASE}/music/api/v1/track/stream?guid=${guid}`, {
+      cookie: `music-token=${token}`,
+      range: 'bytes=0-',
+    });
+    check('无 Sec-Fetch 的媒体请求仍 302', noSfMedia.status === 302, String(noSfMedia.status));
   }
 
   const corsErrs = consoleErrors.filter((e) => /CORS|Access-Control/i.test(e.text));
