@@ -1,0 +1,17 @@
+{
+  "name": "fnmusic-302",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "飞牛音乐 → OpenList(115) 302 直链反代",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test/playback.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.1"
+  }
+}

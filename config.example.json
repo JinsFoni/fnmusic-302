@@ -1,0 +1,21 @@
+{
+  "port": 5667,
+  "listen": "0.0.0.0",
+  "upstream": "http://192.168.0.108:5666",
+  "openlist": {
+    "url": "http://192.168.0.108:5244",
+    "username": "mario",
+    "password": "CHANGE_ME"
+  },
+  "pathMaps": [
+    {
+      "from": "/vol1/1000/音乐库/115音乐库/",
+      "to": "/115网盘/音乐库/"
+    }
+  ],
+  "mode": "direct",
+  "patchPlayer": true,
+  "linkMinTtl": 600,
+  "directGuard": true,
+  "log": true
+}

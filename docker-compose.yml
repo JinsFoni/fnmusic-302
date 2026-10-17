@@ -1,0 +1,21 @@
+services:
+  fnmusic-302:
+    build: .
+    # 也可以直接用 CI 构建好的镜像（把 build: . 换成下面这行）
+    # image: ghcr.io/jinsfoni/fnmusic-302:1.0.0
+    container_name: fnmusic-302
+    restart: unless-stopped
+    ports:
+      - "8666:8666"
+    environment:
+      PORT: "8666"
+      UPSTREAM: "${UPSTREAM:-http://192.168.0.108:5666}"
+      OPENLIST_URL: "${OPENLIST_URL:-http://192.168.0.108:5244}"
+      OPENLIST_USER: "${OPENLIST_USER:-CHANGE_ME}"
+      OPENLIST_PASS: "${OPENLIST_PASS:-CHANGE_ME}"
+      MODE: "direct"
+      PATCH_PLAYER: "1"
+      LINK_MIN_TTL: "600"   # 直链剩余寿命低于此秒数时，在播放请求到达时换链
+      DIRECT_GUARD: "1"     # 撑不完本曲时改走拉流，播放途中可自动续链
+    # 如果改用 host 网络，把上面的 IP 换成 127.0.0.1，并注释掉 ports
+    # network_mode: host

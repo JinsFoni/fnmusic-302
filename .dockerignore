@@ -1,0 +1,12 @@
+node_modules
+.npm-cache
+.pw-browsers
+.git
+.github
+test
+*.log
+.DS_Store
+config.json
+.env
+docker-compose.yml
+README.md
