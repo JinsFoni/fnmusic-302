@@ -437,6 +437,15 @@ function proxy(req, res, { patch = false } = {}) {
 }
 
 /* ------------------------------------------------------------ stream route */
+/* 302 只发给媒体元素；fetch()/XHR 必须由服务端拉流补 CORS 头 */
+function isMediaElementRequest(req) {
+  const dest = String(req.headers['sec-fetch-dest'] || '').toLowerCase();
+  const mode = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
+  if (dest === 'audio' || dest === 'video') return true;
+  if (dest === 'empty' || dest === 'document' || dest === 'iframe') return false;
+  return mode !== 'cors' && mode !== 'same-origin';
+}
+
 async function handleStream(req, res, u) {
   const guid = u.searchParams.get('guid');
   if (!guid) return proxy(req, res);
@@ -469,10 +478,12 @@ async function handleStream(req, res, u) {
     return proxy(req, res);
   }
 
-  // 浏览器 fetch()（WASM 解码 / 元数据分片）是 cors 模式，115 没有 CORS 头，
-  // 只能由本服务拉流并补头；<audio> 在补丁后是 no-cors，可以安心 302。
-  const fetchMode = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
-  const wantsCors = fetchMode === 'cors';
+  // 浏览器 fetch()（WASM 解码 / 元数据分片）拿不到 CORS 头，115 又没有 CORS，
+  // 只能由本服务拉流并补头；<audio>/<video> 在补丁后是 no-cors，可以安心 302。
+  // 判据优先看 sec-fetch-dest（audio/video = 媒体元素，empty = fetch/XHR，
+  // 注意同源 fetch 的 sec-fetch-mode 是 same-origin 而不是 cors），
+  // 没有该头的老客户端再退回 sec-fetch-mode。
+  const wantsCors = !isMediaElementRequest(req);
 
   // 安全阀：这条链的剩余寿命撑不完本曲（换链刚失败时会走到这里），
   // 那就改走拉流，让服务端在播放途中自己续链，避免中途 403。
@@ -486,7 +497,7 @@ async function handleStream(req, res, u) {
   }
 
   if (CFG.mode === 'stream' || wantsCors || tooShort) {
-    log('[stream] 拉流', wantsCors ? '(cors/fetch)' : tooShort ? '(直链过短)' : '(stream mode)', olPath);
+    log('[stream] 拉流', wantsCors ? '(fetch)' : tooShort ? '(直链过短)' : '(stream mode)', olPath);
     return streamFrom115(req, res, raw, olPath);
   }
 

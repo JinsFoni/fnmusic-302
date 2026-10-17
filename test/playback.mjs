@@ -128,7 +128,7 @@ await page.addInitScript(() => {
 
 try {
   const token = await login();
-  await context.addCookies([{ name: 'music-token', value: token, domain: '127.0.0.1', path: '/' }]);
+  await context.addCookies([{ name: 'music-token', value: token, domain: new URL(BASE).hostname, path: '/' }]);
   check('登录并写入 music-token', true, token.slice(0, 8) + '…');
 
   const before = await health();
@@ -243,6 +243,24 @@ try {
       String(corsRes.headers['access-control-allow-origin']));
     check('拉流 Content-Type 正确', /audio\//.test(corsRes.headers['content-type'] || ''),
       String(corsRes.headers['content-type']));
+
+    // 同源 fetch 的 sec-fetch-mode 是 same-origin（不是 cors），也必须拉流，
+    // 否则 302 到 115 会被浏览器 CORS 拦掉
+    const sameRes = await rawGet(`${BASE}/music/api/v1/track/stream?guid=${guid}`, {
+      cookie: `music-token=${token}`,
+      'sec-fetch-mode': 'same-origin',
+      'sec-fetch-dest': 'empty',
+      range: 'bytes=0-1023',
+    });
+    check('同源 fetch 也走拉流', sameRes.status === 206, String(sameRes.status));
+
+    // 媒体元素请求（audio/no-cors）必须仍然 302，别为了修 fetch 把直链弄没了
+    const mediaRes = await rawGet(`${BASE}/music/api/v1/track/stream?guid=${guid}`, {
+      cookie: `music-token=${token}`,
+      'sec-fetch-mode': 'no-cors',
+      'sec-fetch-dest': 'audio',
+    });
+    check('媒体元素仍是 302', mediaRes.status === 302, String(mediaRes.status));
   }
 
   const corsErrs = consoleErrors.filter((e) => /CORS|Access-Control/i.test(e.text));
