@@ -465,6 +465,12 @@ await selfCheck();
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');
 
+  // 根路径是飞牛 fnOS 门户（打开只会卡在「加载中」），直接送到 fnMusic
+  if (u.pathname === '/' || u.pathname === '/index.html') {
+    res.writeHead(302, { Location: '/music/', 'Cache-Control': 'no-store' });
+    return res.end();
+  }
+
   if (u.pathname === '/__fnmusic302/health') {
     const now = Date.now();
     res.writeHead(200, { 'content-type': 'application/json' });
