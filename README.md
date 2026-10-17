@@ -100,13 +100,35 @@ node server.mjs
 | `upstream` | 飞牛音乐地址。反代和它同机时可用 `http://127.0.0.1:5666` |
 | `openlist.url` | OpenList 地址 |
 | `openlist.username/password` | OpenList 账号（需要能读 115 挂载） |
-| `pathMaps` | 飞牛音乐扫描到的**本地路径前缀** → OpenList 里的 **115 路径前缀**，按最长前缀匹配 |
+| `pathMaps` | 飞牛音乐扫描到的**本地路径前缀** → OpenList 里的 **115 路径前缀**，按最长前缀匹配。可用环境变量 `PATH_MAPS` 覆盖 |
 | `mode` | `direct`：能映射就 302；`stream`：不 302，由本服务从 115 拉流并补 CORS |
 | `patchPlayer` | 是否给播放器 JS 打补丁。`direct` 模式必须为 `true` |
 | `linkMinTtl` | 直链剩余寿命低于该秒数时，在**播放请求到达时**换链（默认 600） |
 | `directGuard` | 换链后仍撑不完本曲时，该次请求改走拉流以便播放途中续链（默认 `true`） |
 
-环境变量：`PORT`、`LISTEN`、`UPSTREAM`、`OPENLIST_URL`、`OPENLIST_USER`、`OPENLIST_PASS`、`MODE`、`PATCH_PLAYER`、`LINK_MIN_TTL`、`DIRECT_GUARD`、`CONFIG`。
+环境变量：`PORT`、`LISTEN`、`UPSTREAM`、`OPENLIST_URL`、`OPENLIST_USER`、`OPENLIST_PASS`、`MODE`、`PATCH_PLAYER`、`LINK_MIN_TTL`、`DIRECT_GUARD`、`PATH_MAPS`、`CONFIG`。
+
+### 改路径映射（不用改代码、不用发版）
+
+容器部署时用 `PATH_MAPS`，格式是 `本地前缀=网盘前缀`：
+
+```bash
+# 单条
+PATH_MAPS='/vol1/1000/音乐库/115音乐库/=/115网盘/音乐库/'
+# 多条：用 , 或 ; 分隔；= 写成 => 也行
+PATH_MAPS='/vol1/1000/音乐库/115音乐库/=/115网盘/音乐库/,/vol2/music/=/115网盘/音乐库2/'
+```
+
+设置后会**整体替换** `config.json` 的 `pathMaps`（不是追加）。写进 `.env` 再 `docker compose up -d` 即可生效。
+
+随时确认当前生效的是哪套：
+
+```bash
+curl -s http://192.168.0.108:8666/__fnmusic302/health \
+  | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["pathMapsSource"], d["pathMaps"])'
+```
+
+`pathMapsSource` 取值 `env`（来自 PATH_MAPS）/ `config`（来自 config.json）/ `default`（镜像内置默认）。没配上时会打一条 `WARN [stream] 未命中路径映射` 日志（同一个库目录只打一次），表现是回退透传、走飞牛流量。
 
 ### 怎么确认 pathMaps 配对了
 

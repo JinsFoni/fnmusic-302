@@ -32,7 +32,8 @@ const defaults = {
     username: '',
     password: '',
   },
-  // 本地挂载路径前缀 → OpenList 里的 115 路径前缀（按最长前缀匹配）
+  // 本地挂载路径前缀 → OpenList 里的 115 路径前缀（按最长前缀匹配）。
+  // 可用 config.json 的 pathMaps 覆盖，也可用环境变量 PATH_MAPS 覆盖（后者优先）。
   pathMaps: [
     { from: '/vol1/1000/音乐库/115音乐库/', to: '/115网盘/音乐库/' },
   ],
@@ -48,6 +49,55 @@ const defaults = {
   directGuard: true,
   log: true,
 };
+
+/* 警告不受 log 开关影响；同一个 key 只打一次，避免刷屏 */
+const warnedKeys = new Set();
+function warn(msg) {
+  console.warn(new Date().toISOString(), 'WARN', msg);
+}
+function warnOnce(key, msg) {
+  if (warnedKeys.has(key)) return;
+  if (warnedKeys.size > 200) warnedKeys.clear();
+  warnedKeys.add(key);
+  warn(msg);
+}
+
+/* 路径统一成 /a/b/ 形式；空值归一成根目录 / */
+function normDir(v) {
+  const s = String(v == null ? '' : v)
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+  return s ? `/${s}/` : '/';
+}
+
+/*
+ * PATH_MAPS="/本地/前缀/=/网盘/前缀/,/另一个/=/另一个2/"
+ * 分隔符支持 , ; 换行；等号可写成 = 或 =>；等号两侧空格无所谓。
+ * 一旦设置就整体替换 config.json / 内置默认映射（不追加）。
+ */
+function parsePathMaps(raw) {
+  const out = [];
+  for (const chunk of String(raw).split(/[,;\n]+/)) {
+    const s = chunk.trim();
+    if (!s) continue;
+    const i = s.includes('=>') ? s.indexOf('=>') : s.indexOf('=');
+    if (i < 0) {
+      warn(`PATH_MAPS 片段缺少 "="，已忽略: ${s}`);
+      continue;
+    }
+    const from = s.slice(0, i).trim();
+    const to = s.slice(i + (s[i] === '=' && s[i + 1] === '>' ? 2 : 1)).trim();
+    if (!from) {
+      warn(`PATH_MAPS 片段缺少本地前缀，已忽略: ${s}`);
+      continue;
+    }
+    out.push({ from, to: to || '/' });
+  }
+  return out;
+}
+
+let pathMapsSource = 'default';
 
 function loadConfig() {
   let fileCfg = {};
@@ -72,17 +122,33 @@ function loadConfig() {
   if (process.env.PATCH_PLAYER) cfg.patchPlayer = process.env.PATCH_PLAYER !== '0';
   if (process.env.LINK_MIN_TTL) cfg.linkMinTtl = Number(process.env.LINK_MIN_TTL);
   if (process.env.DIRECT_GUARD) cfg.directGuard = process.env.DIRECT_GUARD !== '0';
+  if (Array.isArray(fileCfg.pathMaps) && fileCfg.pathMaps.length) pathMapsSource = 'config';
+  if (process.env.PATH_MAPS) {
+    const parsed = parsePathMaps(process.env.PATH_MAPS);
+    if (parsed.length) {
+      cfg.pathMaps = parsed;
+      pathMapsSource = 'env';
+    } else {
+      warn('PATH_MAPS 解析后为空，沿用 config.json / 内置默认映射');
+    }
+  }
   cfg.upstream = cfg.upstream.replace(/\/+$/, '');
   cfg.openlist.url = cfg.openlist.url.replace(/\/+$/, '');
-  cfg.pathMaps = (cfg.pathMaps || []).map((m) => ({
-    from: m.from.replace(/\/+$/, '/'),
-    to: m.to.replace(/\/+$/, '/'),
-  }));
+  cfg.pathMaps = (cfg.pathMaps || [])
+    .map((m) => ({ from: normDir(m && m.from), to: normDir(m && m.to) }))
+    .filter((m) => m.from !== '/' && m.from !== m.to);
   return cfg;
 }
 
 const CFG = loadConfig();
 const log = (...a) => CFG.log && console.log(new Date().toISOString(), ...a);
+
+if (CFG.pathMaps.length) {
+  log(`[config] 路径映射 ${CFG.pathMaps.length} 条（来源: ${pathMapsSource}）:`);
+  for (const m of CFG.pathMaps) log(`  ${m.from}  →  ${m.to}`);
+} else {
+  warn('[config] 没有任何路径映射（PATH_MAPS / pathMaps），所有播放都会回退透传');
+}
 
 /* --------------------------------------------------------------- utilities */
 const HOP_BY_HOP = new Set([
@@ -383,7 +449,11 @@ async function handleStream(req, res, u) {
   const olPath = mapTo115(localPath);
 
   if (!olPath) {
-    log('[stream] 未命中路径映射，回退透传', localPath || '(no path)');
+    warnOnce(
+      `nomap:${String(localPath || '').split('/').slice(0, 5).join('/')}`,
+      `[stream] 未命中路径映射，回退透传: ${localPath || '(no path)'}` +
+        ` —— 检查 PATH_MAPS / config.json 的 pathMaps（当前 ${CFG.pathMaps.length} 条）`,
+    );
     return proxy(req, res);
   }
   if (isCue) {
@@ -483,6 +553,7 @@ const server = http.createServer(async (req, res) => {
       upstream: CFG.upstream,
       openlist: CFG.openlist.url,
       pathMaps: CFG.pathMaps,
+      pathMapsSource,
       links: linkCache.size,
       linkDetails: [...linkCache.entries()].map(([p, v]) => ({
         path: p,
@@ -524,7 +595,6 @@ server.listen(CFG.port, CFG.listen, () => {
   log(`fnmusic-302 已启动: http://${CFG.listen}:${CFG.port}/music/`);
   log(`模式=${CFG.mode} 补丁=${CFG.patchPlayer} 上游=${CFG.upstream} OpenList=${CFG.openlist.url}`);
   log(`直链策略: 仅在播放时刷新，剩余 < ${CFG.linkMinTtl}s 时换链（无后台定时器）`);
-  log(`路径映射: ${CFG.pathMaps.map((m) => `${m.from} -> ${m.to}`).join(' , ') || '(未配置)'}`);
 });
 
 server.on('error', (e) => {

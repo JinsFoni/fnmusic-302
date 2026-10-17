@@ -16,5 +16,8 @@ services:
       PATCH_PLAYER: "1"
       LINK_MIN_TTL: "600"   # 直链剩余寿命低于此秒数时，在播放请求到达时换链
       DIRECT_GUARD: "1"     # 撑不完本曲时改走拉流，播放途中可自动续链
+      # 飞牛本地路径前缀 = OpenList 里的 115 路径前缀（多条用 , 分隔）
+      # 留空则用镜像内置默认值；改这里比改代码/重发版省事
+      PATH_MAPS: "${PATH_MAPS:-/vol1/1000/音乐库/115音乐库/=/115网盘/音乐库/}"
     # 如果改用 host 网络，把上面的 IP 换成 127.0.0.1，并注释掉 ports
     # network_mode: host
