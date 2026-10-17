@@ -190,37 +190,37 @@ FN_USER=xxx FN_PASS=xxx npm test          # 用环境变量代替 credentials.js
 
 容器端口 **8666**（`docker-compose.yml` 里 `8666:8666`）。
 
-### 方式一：用 CI 构建好的镜像
+### 方式一：compose + 现成镜像（推荐）
+
+NAS 上只需要 `docker-compose.yml` 和 `.env` 两个文件：
 
 ```bash
-docker pull ghcr.io/jinsfoni/fnmusic-302:1.0.0
+mkdir -p /vol1/1000/Docker/fnmusic-302 && cd /vol1/1000/Docker/fnmusic-302
+# 放入 docker-compose.yml 和 .env（cp .env.example .env 后填账号）
+docker compose up -d
+# 访问 http://192.168.0.108:8666/music/
+```
+
+`docker-compose.yml` 里已经指向 `ghcr.io/jinsfoni/fnmusic-302:1.0.0`，不需要源码，也不需要 `--build`。
+
+### 方式二：docker run
+
+```bash
 docker run -d --name fnmusic-302 --restart unless-stopped \
   -p 8666:8666 \
   -e UPSTREAM=http://192.168.0.108:5666 \
   -e OPENLIST_URL=http://192.168.0.108:5244 \
   -e OPENLIST_USER=mario -e OPENLIST_PASS=CHANGE_ME \
   ghcr.io/jinsfoni/fnmusic-302:1.0.0
-# 访问 http://192.168.0.108:8666/music/
 ```
 
-### 方式二：本机构建
-
-```bash
-cp .env.example .env      # 填 OPENLIST_USER / OPENLIST_PASS
-docker compose up -d --build
-# 访问 http://192.168.0.108:8666/music/
-```
-
-或直接：
+### 方式三：从源码构建
 
 ```bash
 docker build -t fnmusic-302 .
-docker run -d --name fnmusic-302 --restart unless-stopped \
-  -p 8666:8666 \
-  -e UPSTREAM=http://192.168.0.108:5666 \
-  -e OPENLIST_URL=http://192.168.0.108:5244 \
-  -e OPENLIST_USER=mario -e OPENLIST_PASS=CHANGE_ME \
-  fnmusic-302
+docker run -d --name fnmusic-302 --restart unless-stopped -p 8666:8666 \
+  -e UPSTREAM=http://192.168.0.108:5666 -e OPENLIST_URL=http://192.168.0.108:5244 \
+  -e OPENLIST_USER=mario -e OPENLIST_PASS=CHANGE_ME fnmusic-302
 ```
 
 > 如果容器用 `network_mode: host`，`UPSTREAM` 和 `OPENLIST_URL` 可以写 `127.0.0.1`。
@@ -253,5 +253,5 @@ docker run -d --name fnmusic-302 --restart unless-stopped \
 - `test/playback.mjs`：Playwright 端到端播放测试（自带 headless Chrome）
 - `config.json`：本机配置（含凭据，勿提交）
 - `config.example.json`：配置模板
-- `Dockerfile` / `docker-compose.yml` / `.env.example`：NAS 部署（容器端口 8666）
+- `Dockerfile` / `docker-compose.yml` / `.env.example`：镜像构建与 NAS 部署（容器端口 8666）
 - `.github/workflows/docker-release.yml`：发布 release 时自动构建并推送镜像到 GHCR

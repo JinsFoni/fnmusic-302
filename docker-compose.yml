@@ -1,8 +1,7 @@
 services:
   fnmusic-302:
-    build: .
-    # 也可以直接用 CI 构建好的镜像（把 build: . 换成下面这行）
-    # image: ghcr.io/jinsfoni/fnmusic-302:1.0.0
+    # 直接用 CI 构建好的镜像；想从源码构建就把下面这行换成 build: .
+    image: ghcr.io/jinsfoni/fnmusic-302:1.0.0
     container_name: fnmusic-302
     restart: unless-stopped
     ports:
